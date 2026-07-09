@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWalletStore } from '../state/wallet'
 import { useMessageStore } from '../state/messages'
-import { getBalance, getVaultStatus, getDepositAddress, submitTx, getNonce, signTransaction, SignedTransaction } from '../lib/api'
+import { getBalance, getVaultStatus, getDepositAddress, getNonce } from '../lib/api'
+import { submitCanonicalCashTransfer, CANONICAL_TRANSFER_DEFAULT_FEE_LIMIT, CANONICAL_TRANSFER_DEFAULT_TIP } from '../lib/canonicalTransfer'
 import { useExchangeStatus } from '../hooks/useExchangeStatus'
 import TipButton from '../components/TipButton'
 import { DepositModal } from '../components/DepositModal'
@@ -148,7 +149,6 @@ export default function HomeNew() {
     setSendError('')
     setSendSuccess(false)
 
-    // Validation
     const amount = parseFloat(sendAmount)
     if (!sendTo || !sendAmount || amount <= 0) {
       setSendError('Please fill all fields with valid values')
@@ -164,7 +164,6 @@ export default function HomeNew() {
       return
     }
 
-    // Check if private key is set
     if (!profile?.privateKey) {
       setShowPrivateKeyModal(true)
       return
@@ -173,58 +172,41 @@ export default function HomeNew() {
     addMessage('info', `Preparing to send ${amount} ${sendAsset}`, `→ ${sendTo.slice(0, 20)}…`)
 
     try {
-      // Get current nonce from blockchain
       console.log('[handleSend] Getting nonce for:', profile.address)
       const nonce = await getNonce(profile.address)
       console.log('[handleSend] Got nonce:', nonce)
-      
-      // Create transaction
-      const tx: SignedTransaction['tx'] = {
-        token: sendAsset,
-        to: sendTo,
-        amount: Math.floor(amount * 100000000), // Convert to smallest units (8 decimals)
-        from: profile.address,
-        nonce: nonce
-      }
-      console.log('[handleSend] Created tx:', tx)
-      
-      // Sign transaction
-      console.log('[handleSend] Signing transaction...')
-      addMessage('info', 'Signing transaction…')
-      const signature = await signTransaction(tx, profile.privateKey)
-      console.log('[handleSend] Got signature:', signature)
-      
-      // Submit signed transaction
-      const signedTx: SignedTransaction = {
-        tx: tx,
-        sig: signature
-      }
 
-      console.log('[handleSend] Submitting transaction (will wait for confirmation)...')
-      setSendError('Waiting for confirmation (~30s)...')
-      addMessage('pending', `Submitted — waiting for next block (~30s)`, `nonce: ${nonce}`)
-      const result = await submitTx(signedTx)
-      console.log('[handleSend] Submit result:', result)
+      setSendError(`Submitting canonical transaction with nonce ${nonce}...`)
+      addMessage('info', 'Signing transaction locally…')
+
+      const outcome = await submitCanonicalCashTransfer({
+        from: profile.address,
+        to: sendTo,
+        amount: Math.floor(amount * 100000000),
+        nonce,
+        privateKeyHex: profile.privateKey,
+        tip: CANONICAL_TRANSFER_DEFAULT_TIP,
+        feeLimit: CANONICAL_TRANSFER_DEFAULT_FEE_LIMIT,
+      })
+
+      console.log('[handleSend] Canonical transfer outcome:', outcome)
       setSendError('')
-      
-      if (result.ok) {
-        console.log('[handleSend] Transaction confirmed!')
-        addMessage('success', `Sent ${amount} ${sendAsset} — confirmed!`, result.txid !== 'pending' ? `tx: ${result.txid}` : undefined)
+
+      if (outcome.ok) {
+        addMessage('success', outcome.message, outcome.txid !== 'pending' ? `tx: ${outcome.txid}` : undefined)
         setSendSuccess(true)
         setSendTo('')
         setSendAmount('')
         setTimeout(() => setSendSuccess(false), 5000)
-        
-        // Refresh balances — tx is confirmed so state has updated
+
         const newBalances = await getBalance(profile.address)
         console.log('[handleSend] New balances:', newBalances)
         setBalances(newBalances)
         addMessage('info', 'Balance refreshed')
       } else {
-        const reason = result.txid.startsWith('error:') ? result.txid.slice(6) : result.txid
-        console.error('[handleSend] Transaction failed:', result.txid)
-        setSendError(reason)
-        addMessage('error', `Transaction failed`, reason)
+        console.error('[handleSend] Transaction rejected:', outcome.message)
+        setSendError(outcome.message)
+        addMessage('error', 'Transaction rejected', outcome.message)
       }
     } catch (error) {
       console.error('[handleSend] Exception caught:', error)
@@ -336,14 +318,14 @@ export default function HomeNew() {
           <div className="vw-modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="vw-modal-header">
               <h3>Enter Private Key</h3>
-              <button onClick={() => setShowPrivateKeyModal(false)} className="vw-modal-close">✕</button>
+              <button onClick={() => setShowPrivateKeyModal(false)} className="vw-modal-close">âœ•</button>
             </div>
             <div className="vw-modal-body">
               <p style={{ marginBottom: '15px', fontSize: '14px', color: '#666' }}>
                 To send transactions, your private key is required. It will be stored securely in your browser's local storage.
               </p>
               <p style={{ marginBottom: '15px', fontSize: '12px', color: '#ff6b6b' }}>
-                ⚠️ Never share your private key. Only use on trusted devices.
+                âš ï¸ Never share your private key. Only use on trusted devices.
               </p>
               <input
                 type="password"
@@ -371,13 +353,13 @@ export default function HomeNew() {
         <div className="vw-modal-overlay" onClick={() => { setShowKeysModal(false); setShowPrivateKey(false); }}>
           <div className="vw-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
             <div className="vw-modal-header">
-              <h3>🔐 Wallet Security & Keys</h3>
-              <button onClick={() => { setShowKeysModal(false); setShowPrivateKey(false); }} className="vw-modal-close">✕</button>
+              <h3>ðŸ” Wallet Security & Keys</h3>
+              <button onClick={() => { setShowKeysModal(false); setShowPrivateKey(false); }} className="vw-modal-close">âœ•</button>
             </div>
             <div className="vw-modal-body">
               <div style={{ marginBottom: '20px', padding: '15px', background: 'rgba(255, 107, 107, 0.1)', borderRadius: '8px', border: '1px solid rgba(255, 107, 107, 0.3)' }}>
                 <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', fontWeight: 600 }}>
-                  ⚠️ CRITICAL: Never share your seed phrase or private key!
+                  âš ï¸ CRITICAL: Never share your seed phrase or private key!
                 </p>
                 <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#ffb3b3' }}>
                   Anyone with these can steal all your funds. Keep them safe and private.
@@ -389,14 +371,14 @@ export default function HomeNew() {
                 <div style={{ marginBottom: '20px', padding: '15px', background: 'rgba(80, 200, 120, 0.1)', borderRadius: '8px', border: '1px solid rgba(80, 200, 120, 0.3)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <label style={{ fontSize: '13px', color: '#50c878', fontWeight: 600 }}>
-                      🌱 SEED PHRASE (12 Words) - BACKUP THIS!
+                      ðŸŒ± SEED PHRASE (12 Words) - BACKUP THIS!
                     </label>
                     <button 
                       onClick={() => setShowSeedPhrase(!showSeedPhrase)}
                       className="vw-btn-secondary"
                       style={{ padding: '4px 12px', fontSize: '11px' }}
                     >
-                      {showSeedPhrase ? '🙈 Hide' : '👁️ Show'}
+                      {showSeedPhrase ? 'ðŸ™ˆ Hide' : 'ðŸ‘ï¸ Show'}
                     </button>
                   </div>
                   
@@ -429,10 +411,10 @@ export default function HomeNew() {
                         className="vw-btn-primary"
                         style={{ width: '100%', padding: '8px', fontSize: '12px' }}
                       >
-                        {keyCopied ? '✓ Copied!' : '📋 Copy Seed Phrase'}
+                        {keyCopied ? 'âœ“ Copied!' : 'ðŸ“‹ Copy Seed Phrase'}
                       </button>
                       <p style={{ marginTop: '8px', fontSize: '11px', color: '#90ee90' }}>
-                        💡 Write these 12 words on paper in order. You can restore your wallet with this seed phrase.
+                        ðŸ’¡ Write these 12 words on paper in order. You can restore your wallet with this seed phrase.
                       </p>
                     </>
                   ) : (
@@ -460,7 +442,7 @@ export default function HomeNew() {
                     className="vw-btn-secondary"
                     style={{ padding: '0 20px' }}
                   >
-                    {keyCopied ? '✓' : '📋'}
+                    {keyCopied ? 'âœ“' : 'ðŸ“‹'}
                   </button>
                 </div>
               </div>
@@ -472,7 +454,7 @@ export default function HomeNew() {
                 {!profile?.privateKey ? (
                   <div style={{ padding: '20px', background: 'rgba(255, 193, 7, 0.1)', borderRadius: '8px', border: '1px solid rgba(255, 193, 7, 0.3)', textAlign: 'center' }}>
                     <p style={{ margin: 0, fontSize: '14px', color: '#ffc107' }}>
-                      ⚠️ No private key stored
+                      âš ï¸ No private key stored
                     </p>
                     <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#ffecb3' }}>
                       You need to import your private key to send transactions
@@ -493,18 +475,18 @@ export default function HomeNew() {
                         className="vw-btn-secondary"
                         style={{ padding: '0 20px' }}
                       >
-                        {showPrivateKey ? '🙈' : '👁️'}
+                        {showPrivateKey ? 'ðŸ™ˆ' : 'ðŸ‘ï¸'}
                       </button>
                       <button 
                         onClick={() => handleCopyKey(profile.privateKey || '')}
                         className="vw-btn-secondary"
                         style={{ padding: '0 20px' }}
                       >
-                        {keyCopied ? '✓' : '📋'}
+                        {keyCopied ? 'âœ“' : 'ðŸ“‹'}
                       </button>
                     </div>
                     <p style={{ marginTop: '8px', fontSize: '11px', color: '#666' }}>
-                      💡 Backup this key in multiple secure locations (password manager, encrypted file, paper wallet)
+                      ðŸ’¡ Backup this key in multiple secure locations (password manager, encrypted file, paper wallet)
                     </p>
                   </>
                 )}
@@ -517,7 +499,7 @@ export default function HomeNew() {
                   style={{ flex: 1 }}
                   disabled={!profile?.privateKey}
                 >
-                  📥 Download Backup File
+                  ðŸ“¥ Download Backup File
                 </button>
                 <button 
                   onClick={() => { setShowKeysModal(false); setShowPrivateKey(false); }}
@@ -529,7 +511,7 @@ export default function HomeNew() {
 
               <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(100, 150, 255, 0.1)', borderRadius: '8px', border: '1px solid rgba(100, 150, 255, 0.2)' }}>
                 <p style={{ margin: 0, fontSize: '12px', color: '#b8d4ff' }}>
-                  💡 <strong>Backup Checklist:</strong>
+                  ðŸ’¡ <strong>Backup Checklist:</strong>
                 </p>
                 <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '11px', color: '#b8d4ff' }}>
                   <li>Write it down on paper and store securely</li>
@@ -554,7 +536,7 @@ export default function HomeNew() {
           <div className="vw-hero-left">
             <div className="vw-label-sm">TOTAL PORTFOLIO</div>
             <div className="vw-hero-amount">{formatBalance(totalPortfolio)} LAND</div>
-            <div className="vw-hero-usd">≈ ${portfolioUSD} USD</div>
+            <div className="vw-hero-usd">â‰ˆ ${portfolioUSD} USD</div>
           </div>
           <div className="vw-hero-right">
             <div className="vw-hero-row">
@@ -571,7 +553,7 @@ export default function HomeNew() {
                 className="vw-btn-secondary"
                 style={{ padding: '8px 16px', fontSize: '13px' }}
               >
-                🔐 View Keys & Backup
+                ðŸ” View Keys & Backup
               </button>
             </div>
           </div>
@@ -593,7 +575,7 @@ export default function HomeNew() {
                 <div className="vw-asset-right">
                   <div className="vw-asset-balance">{formatBalance(balance)}</div>
                   <div className="vw-asset-subtext">
-                    Available · Total {formatBalance(balance)}
+                    Available Â· Total {formatBalance(balance)}
                   </div>
                 </div>
               </div>
@@ -656,7 +638,7 @@ export default function HomeNew() {
             {(receiveAsset === 'BTC' || receiveAsset === 'BCH' || receiveAsset === 'DOGE') && (
               <>
                 <div className="vw-warning-box">
-                  ⚠️ Only send {receiveAsset} to this address. Sending other cryptocurrencies may result in permanent loss.
+                  âš ï¸ Only send {receiveAsset} to this address. Sending other cryptocurrencies may result in permanent loss.
                 </div>
 
                 <DepositWatcher
@@ -743,7 +725,7 @@ export default function HomeNew() {
               View prices, charts, and trading activity
             </p>
             <button className="vw-btn-secondary" onClick={() => navigate('/market')}>
-              Open Market →
+              Open Market â†’
             </button>
           </div>
 
@@ -754,7 +736,7 @@ export default function HomeNew() {
             </p>
             {exchangeStatus.enabled ? (
               <button className="vw-btn-secondary" onClick={() => navigate('/exchange')}>
-                Open Exchange →
+                Open Exchange â†’
               </button>
             ) : (
               <button 
@@ -763,7 +745,7 @@ export default function HomeNew() {
                 title={exchangeStatus.reason || 'Exchange unlocks after your deposit is confirmed.'}
                 disabled
               >
-                🔒 Locked
+                ðŸ”’ Locked
               </button>
             )}
           </div>
@@ -777,7 +759,7 @@ export default function HomeNew() {
               <h3 className="vw-action-title">Vision Vault</h3>
               <span className="vw-vault-badge">Live updating (3s)</span>
             </div>
-            <p className="vw-action-subtitle">Foundation & Treasury • Auto-balancing over time</p>
+            <p className="vw-action-subtitle">Foundation & Treasury â€¢ Auto-balancing over time</p>
 
             <div className="vw-vault-stats">
               <div className="vw-vault-stat-row">
@@ -797,7 +779,7 @@ export default function HomeNew() {
             </div>
 
             <div className="vw-vault-footer">
-              50% miners · 30% dev · 20% founders
+              50% miners Â· 30% dev Â· 20% founders
             </div>
           </div>
         </div>
@@ -806,3 +788,4 @@ export default function HomeNew() {
     </div>
   )
 }
+
