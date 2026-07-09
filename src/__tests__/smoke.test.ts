@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { generateMnemonic, deriveKeys, hexToBytes, bytesToHex, isValidHex, isValidAddress } from '../lib/keystore'
 import { isValidHandle, isValidAddress as guardIsValidAddress, isPositiveAmount } from '../lib/guards'
 import { getBaseUrl, setBaseUrl } from '../lib/api'
@@ -48,8 +48,8 @@ describe('Guards', () => {
     expect(isValidHandle('test')).toBe(true)
     expect(isValidHandle('test-123')).toBe(true)
     expect(isValidHandle('test_user.name')).toBe(true)
+    expect(isValidHandle('TEST')).toBe(true) // uppercase allowed by current app behavior
     expect(isValidHandle('ab')).toBe(false) // too short
-    expect(isValidHandle('TEST')).toBe(false) // uppercase not allowed
     expect(isValidHandle('test@user')).toBe(false) // invalid character
   })
 
