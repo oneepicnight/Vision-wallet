@@ -11,6 +11,7 @@ export interface CanonicalCashTransferRequest {
   privateKeyHex: string
   tip?: number
   feeLimit?: number
+  apiBase?: string
 }
 
 export interface CanonicalCashTransferPrepared {
@@ -74,7 +75,7 @@ export function buildCanonicalCashTransferForWallet(request: Omit<CanonicalCashT
 export async function submitCanonicalCashTransfer(request: CanonicalCashTransferRequest): Promise<CanonicalCashTransferOutcome> {
   const prepared = await prepareCanonicalCashTransfer(request)
   try {
-    const response = await submitCanonicalTx(prepared.tx)
+    const response = await submitCanonicalTx(prepared.tx, request.apiBase)
     return normalizeOutcome(response, prepared)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)

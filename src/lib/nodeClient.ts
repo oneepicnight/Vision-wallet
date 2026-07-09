@@ -1,4 +1,4 @@
-import { ed25519 } from './ed25519-setup'
+﻿import { ed25519 } from './ed25519-setup'
 import { loadConfig } from './config'
 
 export interface WalletTransferRequest {
@@ -40,6 +40,10 @@ export interface CanonicalTransactionLookup {
   block_height: number | null
   tx_index: number | null
   tx: CanonicalTx | null
+}
+
+export interface CanonicalApiOptions {
+  apiBase?: string
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -148,8 +152,14 @@ export async function signCanonicalCashTransfer(
   }
 }
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+async function resolveApiBase(apiBaseOverride?: string): Promise<string> {
+  if (apiBaseOverride) return apiBaseOverride.replace(/\/$/, '')
   const { apiBase } = await loadConfig()
+  return apiBase.replace(/\/$/, '')
+}
+
+async function fetchJson<T>(path: string, init?: RequestInit, apiBaseOverride?: string): Promise<T> {
+  const apiBase = await resolveApiBase(apiBaseOverride)
   const response = await fetch(`${apiBase}${path.startsWith('/') ? path : `/${path}`}`, {
     headers: { 'content-type': 'application/json', ...(init?.headers || {}) },
     ...init,
@@ -162,25 +172,25 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export async function getNodeStatus(): Promise<any> {
-  return fetchJson('/status')
+export async function getNodeStatus(apiBase?: string): Promise<any> {
+  return fetchJson('/status', undefined, apiBase)
 }
 
-export async function getCanonicalBalance(address: string): Promise<CanonicalAccountBalance> {
-  return fetchJson(`/balance/${address}`)
+export async function getCanonicalBalance(address: string, apiBase?: string): Promise<CanonicalAccountBalance> {
+  return fetchJson(`/balance/${address}`, undefined, apiBase)
 }
 
-export async function getCanonicalNonce(address: string): Promise<CanonicalAccountNonce> {
-  return fetchJson(`/nonce/${address}`)
+export async function getCanonicalNonce(address: string, apiBase?: string): Promise<CanonicalAccountNonce> {
+  return fetchJson(`/nonce/${address}`, undefined, apiBase)
 }
 
-export async function getCanonicalTransaction(txId: string): Promise<CanonicalTransactionLookup> {
-  return fetchJson(`/transaction/${txId}`)
+export async function getCanonicalTransaction(txId: string, apiBase?: string): Promise<CanonicalTransactionLookup> {
+  return fetchJson(`/transaction/${txId}`, undefined, apiBase)
 }
 
-export async function submitCanonicalTx(tx: CanonicalTx): Promise<any> {
+export async function submitCanonicalTx(tx: CanonicalTx, apiBase?: string): Promise<any> {
   return fetchJson('/transactions', {
     method: 'POST',
     body: JSON.stringify(tx),
-  })
+  }, apiBase)
 }
